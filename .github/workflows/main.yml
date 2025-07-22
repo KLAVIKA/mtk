@@ -1,0 +1,40 @@
+name: 멜론 티켓 빈자리 확인
+
+on:
+  # 5분마다 한번씩 자동으로 실행됩니다.
+  schedule:
+    - cron: '*/5 * * * *'
+    
+  # Actions 탭에서 수동으로 실행할 수도 있게 합니다.
+  workflow_dispatch:
+
+jobs:
+  check_ticket:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 🎟️ 티켓 좌석 확인
+        # 원본 프로젝트 코드를 그대로 가져와 사용합니다.
+        uses: mooyoul/melon-ticket-actions@v1.1.0 
+        with:
+          # --- ★ 여기만 자신의 정보로 수정하세요! ★ ---
+
+          # 1. 확인할 공연의 ID
+          product-id: "211664"
+
+          # 2. 확인할 회차의 ID
+          schedule-id: "100001"
+
+          # 3. 확인할 좌석 등급의 ID (하나만 지정)
+          # ※ 만약 여러 등급을 확인하고 싶다면, 이 job 전체를 복사해서
+          #    아래에 붙여넣고 seat-id만 다르게 설정하면 됩니다.
+          seat-id: "10674"
+          
+          # --- 수정 끝 ---
+
+
+          # Slack Webhook URL은 2단계에서 만든 비밀 창고(Secrets)에서 안전하게 가져옵니다.
+          slack-incoming-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+          # (선택 사항) 알림 메시지를 자유롭게 수정할 수 있습니다.
+          message: '티켓 발견! 예매하러 달려가세요!'
