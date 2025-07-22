@@ -10,68 +10,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # 1. 내 저장소에 있는 코드 파일들(check.js)을 가져옵니다.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Node.js 실행 환경을 준비합니다.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
+      # 3. 필요한 라이브러리를 설치합니다.
       - name: Install Dependencies
         run: npm install axios querystring
 
+      # 4. 우리가 만든 check.js 파일을 실행합니다.
       - name: Check Tickets & Notify
         env:
+          # --- ★ 여기에 자신의 정보만 입력하세요! ★ ---
           PRODUCT_ID: "211664"
           SCHEDULE_ID: "100001"
           SEAT_IDS_JSON: '[{ "name": "VIP(스탠딩)", "id": "12285" }, { "name": "스탠딩 R", "id": "10674" }, { "name": "지정석 R", "id": "10062" }]'
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          node -e "
-            const axios = require('axios');
-            const qs = require('querystring');
-
-            const PRODUCT_ID = process.env.PRODUCT_ID;
-            const SCHEDULE_ID = process.env.SCHEDULE_ID;
-            const SEAT_GRADES_TO_CHECK = JSON.parse(process.env.SEAT_IDS_JSON);
-            const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
-            // ★★★★★ 수정된 부분: 모든 백틱(`) 앞에 역슬래시(\) 추가 ★★★★★
-            const performancePageUrl = \`https://ticket.melon.com/performance/index.htm?prodId=\${PRODUCT_ID}\`;
-            
-            const headers = {
-                'Accept': 'application/json, text/javascript, */*; q=0.01',
-                'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                'Origin': 'https://ticket.melon.com',
-                'Referer': performancePageUrl,
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
-                'X-Requested-With': 'XMLHttpRequest'
-            };
-
-            async function checkAllSeats() {
-              console.log('좌석 정보를 확인합니다...');
-              for (const grade of SEAT_GRADES_TO_CHECK) {
-                try {
-                  const response = await axios.post(
-                    'https://ticket.melon.com/tktapi/product/seatStateInfo.json?v=1',
-                    qs.stringify({ prodId: PRODUCT_ID, scheduleNo: SCHEDULE_ID, seatId: grade.id, volume: 1, selectedGradeVolume: 1 }),
-                    { headers: headers }
-                  );
-
-                  if (response.data && response.data.chkResult) {
-                    console.log(\`성공! '\${grade.name}' 좌석 발견!\`);
-                    const message = \`**\${grade.name}** 티켓 발견! 지금 바로 예매하세요!\\n\${performancePageUrl}\`;
-                    await axios.post(SLACK_WEBHOOK_URL, { text: message });
-                    console.log('Slack 알림 전송 완료.');
-                    process.exit(0);
-                  } else {
-                    const seatCount = response.data?.data?.seatGradeList?.[0]?.remainSeatCnt || 0;
-                    console.log(\`'\${grade.name}': \${seatCount}석\`);
-                  }
-                } catch (error) {
-                  console.error(\`'\${grade.name}' 확인 중 오류 발생:\`, error.message);
-                }
-              }
-              console.log('빈자리를 찾지 못했습니다.');
-            }
-
-            checkAllSeats();
-          "
+        run: node check.js
