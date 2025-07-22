@@ -13,28 +13,76 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: 🎟️ 티켓 좌석 확인
-        # 원본 프로젝트 코드를 그대로 가져와 사용합니다.
-        uses: mooyoul/melon-ticket-actions@v1.1.0 
+      # 1. Node.js 실행 환경을 준비합니다.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
+          node-version: '18'
+
+      # 2. 필요한 라이브러리(axios)를 설치합니다.
+      - name: Install Dependencies
+        run: npm install axios querystring
+
+      # 3. 모든 헤더를 포함하여 직접 API를 요청하는 스크립트를 실행합니다.
+      - name: Check Tickets & Notify
+        env:
           # --- ★ 여기만 자신의 정보로 수정하세요! ★ ---
-
-          # 1. 확인할 공연의 ID
-          product-id: "211664"
-
-          # 2. 확인할 회차의 ID
-          schedule-id: "100001"
-
-          # 3. 확인할 좌석 등급의 ID (하나만 지정)
-          # ※ 만약 여러 등급을 확인하고 싶다면, 이 job 전체를 복사해서
-          #    아래에 붙여넣고 seat-id만 다르게 설정하면 됩니다.
-          seat-id: "10674"
-          
+          PRODUCT_ID: "211664"
+          SCHEDULE_ID: "100001"
+          # 확인할 좌석 등급 목록을 JSON 형식으로 입력합니다.
+          # 따옴표를 주의해서 아래 형식과 똑같이 작성해주세요.
+          SEAT_IDS_JSON: '[{ "name": "VIP(스탠딩)", "id": "12285" }, { "name": "스탠딩 R", "id": "10674" }, { "name": "지정석 R", "id": "10062" }]'
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           # --- 수정 끝 ---
+        run: |
+          node -e "
+            const axios = require('axios');
+            const qs = require('querystring');
 
+            // GitHub Actions의 환경 변수에서 설정값을 가져옵니다.
+            const PRODUCT_ID = process.env.PRODUCT_ID;
+            const SCHEDULE_ID = process.env.SCHEDULE_ID;
+            const SEAT_GRADES_TO_CHECK = JSON.parse(process.env.SEAT_IDS_JSON);
+            const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
+            const performancePageUrl = \`https://ticket.melon.com/performance/index.htm?prodId=\${PRODUCT_ID}\`;
+            
+            // 실제 브라우저와 가장 유사한 헤더를 구성합니다.
+            const headers = {
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'Origin': 'https://ticket.melon.com',
+                'Referer': performancePageUrl,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+                'X-Requested-With': 'XMLHttpRequest'
+            };
 
-          # Slack Webhook URL은 2단계에서 만든 비밀 창고(Secrets)에서 안전하게 가져옵니다.
-          slack-incoming-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+            async function checkAllSeats() {
+              console.log('좌석 정보를 확인합니다...');
+              for (const grade of SEAT_GRADES_TO_CHECK) {
+                try {
+                  const response = await axios.post(
+                    'https://ticket.melon.com/tktapi/product/seatStateInfo.json?v=1',
+                    qs.stringify({ prodId: PRODUCT_ID, scheduleNo: SCHEDULE_ID, seatId: grade.id, volume: 1, selectedGradeVolume: 1 }),
+                    { headers: headers }
+                  );
 
-          # (선택 사항) 알림 메시지를 자유롭게 수정할 수 있습니다.
-          message: '티켓 발견! 예매하러 달려가세요!'
+                  if (response.data && response.data.chkResult) {
+                    console.log(`성공! '\${grade.name}' 좌석 발견!`);
+                    const message = \`**\${grade.name}** 티켓 발견! 지금 바로 예매하세요!\\n\${performancePageUrl}\`;
+                    await axios.post(SLACK_WEBHOOK_URL, { text: message });
+                    console.log('Slack 알림 전송 완료.');
+                    process.exit(0); // 성공 시 즉시 종료
+                  } else {
+                    const seatCount = response.data?.data?.seatGradeList?.[0]?.remainSeatCnt || 0;
+                    console.log(`'\${grade.name}': \${seatCount}석`);
+                  }
+                } catch (error) {
+                  console.error(`'\${grade.name}' 확인 중 오류 발생:`, error.message);
+                }
+              }
+              console.log('빈자리를 찾지 못했습니다.');
+            }
+
+            checkAllSeats();
+          "```
